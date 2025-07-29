@@ -993,23 +993,23 @@ export default function DataSantriPage() {
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 transition-colors">
-              Program Studi
-            </label>
-            <select
-              value={programStudiFilter}
-              onChange={(e) => setProgramStudiFilter(e.target.value)}
-              className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 transition-colors"
-            >
-              <option value="all">Semua Program Studi</option>
-              {uniqueProgramStudi.map((prodi) => (
-                <option key={prodi} value={prodi}>
-                  {prodi}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/*<div>*/}
+          {/*  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 transition-colors">*/}
+          {/*    Program Studi*/}
+          {/*  </label>*/}
+          {/*  <select*/}
+          {/*    value={programStudiFilter}*/}
+          {/*    onChange={(e) => setProgramStudiFilter(e.target.value)}*/}
+          {/*    className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 transition-colors"*/}
+          {/*  >*/}
+          {/*    <option value="all">Semua Program Studi</option>*/}
+          {/*    {uniqueProgramStudi.map((prodi) => (*/}
+          {/*      <option key={prodi} value={prodi}>*/}
+          {/*        {prodi}*/}
+          {/*      </option>*/}
+          {/*    ))}*/}
+          {/*  </select>*/}
+          {/*</div>*/}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 transition-colors">
