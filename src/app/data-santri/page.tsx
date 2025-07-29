@@ -1275,7 +1275,7 @@ export default function DataSantriPage() {
                         }`}
                         onClick={() => handleSort("programStudi")}
                       >
-                        <div className="flex items-center">
+                        {/* <div className="flex items-center">
                           <span>Program Studi</span>
                           <div className="flex flex-col ml-1">
                             <ChevronUpIcon
@@ -1295,7 +1295,7 @@ export default function DataSantriPage() {
                               }`}
                             />
                           </div>
-                        </div>
+                        </div> */}
                       </th>
                       <th
                         scope="col"
@@ -1457,9 +1457,7 @@ export default function DataSantriPage() {
                           <td className={textClasses}>
                             {santri.semester || "-"}
                           </td>
-                          <td className={textClasses}>
-                            {santri.programStudi || "-"}
-                          </td>
+                          <td className={textClasses}>{""}</td>
                           <td className={textClasses}>{santri.tahunMasuk}</td>
                           <td className={textClasses}>
                             {santri.nomorWalisantri}
