@@ -7,16 +7,13 @@ import {
   deleteDoc,
   updateDoc,
   doc,
-  serverTimestamp,
-  query,
-  where,
-  getDocs
+  serverTimestamp
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db } from '@/firebase/config';
 import { format } from 'date-fns';
 import { AttendanceRecord, AttendanceType } from '@/types/attendance';
-import {Santri} from "@/types/santri";
+import SantriSelection from './SantriSelection';
 
 interface SessionSelectorProps {
   kodeAsrama: string;
@@ -49,18 +46,8 @@ export default function SessionSelector({ kodeAsrama, teacherId }: SessionSelect
     description: '',
     originalSantriIds: []
   });
-  const [santris, setSantris] = useState<Santri[]>([]);
-  const [filteredSantris, setFilteredSantris] = useState<Santri[]>([]);
   const [selectedSantriIds, setSelectedSantriIds] = useState<Set<string>>(new Set());
-  const [isSelectAll, setIsSelectAll] = useState(false);
-  const [isLoadingSantris, setIsLoadingSantris] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
-  const [filters, setFilters] = useState({
-    statusAktif: 'Aktif',
-    kamar: '',
-    jenjangPendidikan: '',
-    semester: '',
-  });
   const [isAddingType, setIsAddingType] = useState(false);
   const [isUpdatingType, setIsUpdatingType] = useState(false);
   const [isDeletingSession, setIsDeletingSession] = useState(false);
@@ -83,22 +70,16 @@ export default function SessionSelector({ kodeAsrama, teacherId }: SessionSelect
     loadAttendanceTypes();
   }, []);
   
-  // Fetch santris when add modal opens
+  // Reset selections when modals close
   useEffect(() => {
-    if (showAddTypeModal) {
-      fetchSantris();
-    } else {
-      // Reset selections when modal closes
+    if (!showAddTypeModal) {
       setSelectedSantriIds(new Set());
-      setIsSelectAll(false);
     }
-  }, [showAddTypeModal, kodeAsrama]);
+  }, [showAddTypeModal]);
   
-  // Fetch santris when edit modal opens and set selected santris
+  // Set selected santris when edit modal opens
   useEffect(() => {
     if (showEditTypeModal) {
-      fetchSantris();
-      
       // Set selected santris based on the type being edited
       if (editTypeForm.originalSantriIds && editTypeForm.originalSantriIds.length > 0) {
         setSelectedSantriIds(new Set(editTypeForm.originalSantriIds));
@@ -106,10 +87,9 @@ export default function SessionSelector({ kodeAsrama, teacherId }: SessionSelect
     } else {
       // Reset form and selections when modal closes
       setSelectedSantriIds(new Set());
-      setIsSelectAll(false);
       setHasChanges(false);
     }
-  }, [showEditTypeModal, kodeAsrama]);
+  }, [showEditTypeModal]);
 
   // Load active sessions
   useEffect(() => {
@@ -219,71 +199,14 @@ export default function SessionSelector({ kodeAsrama, teacherId }: SessionSelect
     return format(date, 'HH:mm');
   };
   
-  // Fetch santris function
-  const fetchSantris = async () => {
-    setIsLoadingSantris(true);
-    try {
-      const santriRef = collection(db, "SantriCollection");
-      // Get all santris from the current asrama
-      const q = query(
-        santriRef, 
-        where("kodeAsrama", "==", kodeAsrama)
-      );
-      const querySnapshot = await getDocs(q);
-      
-      const santriData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        nama: doc.data().nama || '',
-        kamar: doc.data().kamar || '',
-        jenjangPendidikan: doc.data().jenjangPendidikan || '',
-        statusAktif: doc.data().statusAktif || '',
-        tahunMasuk: doc.data().tahunMasuk || '',
-        programStudi: doc.data().programStudi || '',
-        semester: doc.data().kelas || '',
-        kodeAsrama: doc.data().kodeAsrama
-      }));
-      
-      setSantris(santriData);
-      
-      // Apply initial filters
-      applyFilters(santriData, filters);
-    } catch (error) {
-      console.error("Error fetching santri data:", error);
-    } finally {
-      setIsLoadingSantris(false);
-    }
-  };
-  
-  // Apply filters
-  const applyFilters = (data: Santri[], currentFilters: typeof filters) => {
-    let filtered = [...data];
+  // Handle santri selection changes
+  const handleSantriSelectionChange = (selectedIds: Set<string>) => {
+    setSelectedSantriIds(selectedIds);
     
-    if (currentFilters.statusAktif) {
-      filtered = filtered.filter(santri => santri.statusAktif === currentFilters.statusAktif);
+    // Check for changes in edit mode
+    if (showEditTypeModal) {
+      checkForChanges(selectedIds);
     }
-    
-    if (currentFilters.kamar) {
-      filtered = filtered.filter(santri => santri.kamar === currentFilters.kamar);
-    }
-    
-    if (currentFilters.jenjangPendidikan) {
-      filtered = filtered.filter(santri => santri.jenjangPendidikan === currentFilters.jenjangPendidikan);
-    }
-
-    if (currentFilters.semester) {
-      filtered = filtered.filter(santri => santri.semester === currentFilters.semester);
-    }
-    
-    setFilteredSantris(filtered);
-    setIsSelectAll(false);
-  };
-  
-  // Handle filter changes
-  const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    const newFilters = { ...filters, [name]: value };
-    setFilters(newFilters);
-    applyFilters(santris, newFilters);
   };
   
   // Check if selections have changed from original
@@ -322,41 +245,6 @@ export default function SessionSelector({ kodeAsrama, teacherId }: SessionSelect
     setHasChanges(changed);
   };
   
-  // Handle select all
-  const handleSelectAll = () => {
-    if (isSelectAll) {
-      setSelectedSantriIds(new Set());
-    } else {
-      const newSelectedIds = new Set<string>();
-      filteredSantris.forEach(santri => newSelectedIds.add(santri.id));
-      setSelectedSantriIds(newSelectedIds);
-    }
-    setIsSelectAll(!isSelectAll);
-    
-    // Check for changes in edit mode
-    if (showEditTypeModal) {
-      const newSelectedIds = isSelectAll ? new Set() : new Set(filteredSantris.map(s => s.id));
-      checkForChanges(newSelectedIds);
-    }
-  };
-  
-  // Handle individual selection
-  const handleSelectSantri = (santriId: string) => {
-    const newSelectedIds = new Set(selectedSantriIds);
-    if (newSelectedIds.has(santriId)) {
-      newSelectedIds.delete(santriId);
-    } else {
-      newSelectedIds.add(santriId);
-    }
-    setSelectedSantriIds(newSelectedIds);
-    setIsSelectAll(newSelectedIds.size === filteredSantris.length && filteredSantris.length > 0);
-    
-    // Check for changes in edit mode
-    if (showEditTypeModal) {
-      checkForChanges(newSelectedIds);
-    }
-  };
-  
   // Handle adding a new attendance type
   const handleAddAttendanceType = async () => {
     if (!newTypeForm.name.trim()) return;
@@ -390,7 +278,6 @@ export default function SessionSelector({ kodeAsrama, teacherId }: SessionSelect
         description: ''
       });
       setSelectedSantriIds(new Set());
-      setIsSelectAll(false);
       
       // Close modal
       setShowAddTypeModal(false);
@@ -797,203 +684,12 @@ export default function SessionSelector({ kodeAsrama, teacherId }: SessionSelect
             
             {/* Santri selection section */}
             <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
-              <h4 className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-3">Pilih Santri untuk Presensi Ini</h4>
-              
-              {/* Filters */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-                <div>
-                  <label htmlFor="statusAktif" className="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Status Aktif
-                  </label>
-                  <select
-                    id="statusAktif"
-                    name="statusAktif"
-                    value={filters.statusAktif}
-                    onChange={handleFilterChange}
-                    className="mt-1 block w-full text-sm rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:text-white"
-                  >
-                    <option value="">Semua Status</option>
-                    <option value="Aktif">Aktif</option>
-                    <option value="Boyong">Boyong</option>
-                    <option value="Lulus">Lulus</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="jenjangPendidikan" className="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Jenjang Pendidikan
-                  </label>
-                  <select
-                    id="jenjangPendidikan"
-                    name="jenjangPendidikan"
-                    value={filters.jenjangPendidikan}
-                    onChange={handleFilterChange}
-                    className="mt-1 block w-full text-sm rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:text-white"
-                  >
-                    <option value="">Semua Jenjang</option>
-                    {[...new Set(santris.map(s => s.jenjangPendidikan))].filter(Boolean).sort().map(jenjang => (
-                      <option key={jenjang} value={jenjang}>{jenjang}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div>
-                  <label htmlFor="kamar" className="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Kamar
-                  </label>
-                  <select
-                    id="kamar"
-                    name="kamar"
-                    value={filters.kamar}
-                    onChange={handleFilterChange}
-                    className="mt-1 block w-full text-sm rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:text-white"
-                  >
-                    <option value="">Semua Kamar</option>
-                    {[...new Set(santris.map(s => s.kamar))].filter(Boolean).sort().map(kamar => (
-                      <option key={kamar} value={kamar}>{kamar}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div>
-                  <label htmlFor="semester" className="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Semester/Kelas
-                  </label>
-                  <select
-                    id="semester"
-                    name="semester"
-                    value={filters.semester}
-                    onChange={handleFilterChange}
-                    className="mt-1 block w-full text-sm rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:text-white"
-                  >
-                    <option value="">Semua Semester/Kelas</option>
-                    {[...new Set(santris.map(s => s.semester))].filter(Boolean).sort().map(jenjang => (
-                      <option key={jenjang} value={jenjang}>{jenjang}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              
-              {/* Santri list */}
-              <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-                <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 text-blue-600 rounded border-gray-300 dark:border-gray-600 focus:ring-blue-500"
-                    checked={isSelectAll}
-                    onChange={handleSelectAll}
-                  />
-                  <span className="ml-2 text-xs font-medium text-gray-700 dark:text-gray-300">
-                    {isSelectAll 
-                      ? `Semua Terpilih (${filteredSantris.length})`
-                      : selectedSantriIds.size > 0
-                        ? `${selectedSantriIds.size} Terpilih dari ${filteredSantris.length}`
-                        : `Pilih Semua (${filteredSantris.length})`
-                    }
-                  </span>
-                </div>
-                
-                <div className="max-h-60 overflow-y-auto">
-                  {isLoadingSantris ? (
-                    <div className="flex flex-col justify-center items-center py-8 space-y-2">
-                      <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-                      <span className="text-sm text-gray-500 dark:text-gray-400">
-                        Memuat data santri...
-                      </span>
-                    </div>
-                  ) : filteredSantris.length === 0 ? (
-                    <div className="py-4 px-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                      Tidak ada santri yang sesuai dengan filter
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead className="bg-gray-50 dark:bg-gray-800">
-                          <tr>
-                            <th scope="col" className="px-2 py-2 sticky left-0 bg-gray-50 dark:bg-gray-800 z-10"></th>
-                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky left-8 bg-gray-50 dark:bg-gray-800 z-10">
-                              Nama
-                            </th>
-                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                              Status
-                            </th>
-                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                              Kamar
-                            </th>
-                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                              Jenjang Pendidikan
-                            </th>
-                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                              Semester/Kelas
-                            </th>
-                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                              Program Studi
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                          {filteredSantris.map((santri) => (
-                            <tr 
-                              key={santri.id}
-                              className={selectedSantriIds.has(santri.id) 
-                                ? "bg-blue-50 dark:bg-blue-900/30" 
-                                : "hover:bg-gray-50 dark:hover:bg-gray-800"}
-                            >
-                              <td className={`px-2 py-2 whitespace-nowrap sticky left-0 z-10 ${
-                                selectedSantriIds.has(santri.id) 
-                                  ? "bg-blue-50 dark:bg-blue-900/30" 
-                                  : "bg-white dark:bg-gray-900"
-                              }`}>
-                                <input
-                                  type="checkbox"
-                                  className="h-4 w-4 text-blue-600 rounded border-gray-300 dark:border-gray-600 focus:ring-blue-500"
-                                  checked={selectedSantriIds.has(santri.id)}
-                                  onChange={() => handleSelectSantri(santri.id)}
-                                />
-                              </td>
-                              <td className={`px-3 py-2 whitespace-nowrap text-xs font-medium text-gray-900 dark:text-white sticky left-8 z-10 ${
-                                selectedSantriIds.has(santri.id) 
-                                  ? "bg-blue-50 dark:bg-blue-900/30" 
-                                  : "bg-white dark:bg-gray-900"
-                              }`}>
-                                {santri.nama}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-xs">
-                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                  ${santri.statusAktif === 'Aktif' ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400' : 
-                                  santri.statusAktif === 'Boyong' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-400' : 
-                                  santri.statusAktif === 'Lulus' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-400' :
-                                  'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}>
-                                  {santri.statusAktif}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
-                                {santri.kamar || "-"}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
-                                {santri.jenjangPendidikan || "-"}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
-                                {santri.semester || "-"}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
-                                {santri.programStudi || "-"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                {selectedSantriIds.size === 0 
-                  ? 'Jika tidak ada santri dipilih, presensi akan menampilkan semua santri Aktif'
-                  : `${selectedSantriIds.size} santri akan ditampilkan di presensi ini`
-                }
-              </div>
+              <SantriSelection
+                kodeAsrama={kodeAsrama}
+                selectedSantriIds={selectedSantriIds}
+                onSelectionChange={handleSantriSelectionChange}
+                title="Pilih Santri untuk Presensi Ini"
+              />
             </div>
             
             <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -1076,212 +772,12 @@ export default function SessionSelector({ kodeAsrama, teacherId }: SessionSelect
             
             {/* Santri selection section */}
             <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
-              <h4 className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-3">Pilih Santri untuk Presensi Ini</h4>
-              
-              {/* Filters */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                <div>
-                  <label htmlFor="statusAktif" className="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Status Aktif
-                  </label>
-                  <select
-                    id="statusAktif"
-                    name="statusAktif"
-                    value={filters.statusAktif}
-                    onChange={handleFilterChange}
-                    className="mt-1 block w-full text-sm rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:text-white"
-                  >
-                    <option value="">Semua Status</option>
-                    <option value="Aktif">Aktif</option>
-                    <option value="Boyong">Boyong</option>
-                    <option value="Lulus">Lulus</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label htmlFor="jenjangPendidikan" className="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Jenjang Pendidikan
-                  </label>
-                  <select
-                    id="jenjangPendidikan"
-                    name="jenjangPendidikan"
-                    value={filters.jenjangPendidikan}
-                    onChange={handleFilterChange}
-                    className="mt-1 block w-full text-sm rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:text-white"
-                  >
-                    <option value="">Semua Jenjang</option>
-                    {[...new Set(santris.map(santri => santri.jenjangPendidikan))]
-                      .filter(Boolean)
-                      .sort()
-                      .map(jenjang => (
-                        <option key={jenjang} value={jenjang}>{jenjang}</option>
-                      ))}
-                  </select>
-                </div>
-                
-                <div>
-                  <label htmlFor="kamar" className="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Kamar
-                  </label>
-                  <select
-                    id="kamar"
-                    name="kamar"
-                    value={filters.kamar}
-                    onChange={handleFilterChange}
-                    className="mt-1 block w-full text-sm rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:text-white"
-                  >
-                    <option value="">Semua Kamar</option>
-                    {[...new Set(santris.map(santri => santri.kamar))].sort().map(kamar => (
-                      <option key={kamar} value={kamar}>{kamar || "(Kosong)"}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div>
-                  <label htmlFor="semester" className="block text-xs font-medium text-gray-700 dark:text-gray-300">
-                    Semester/Kelas
-                  </label>
-                  <select
-                    id="semester"
-                    name="semester"
-                    value={filters.semester}
-                    onChange={handleFilterChange}
-                    className="mt-1 block w-full text-sm rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:text-white"
-                  >
-                    <option value="">Semua Semester</option>
-                    {[...new Set(santris.map(santri => santri.semester))]
-                      .filter(Boolean)
-                      .sort((a, b) => parseInt(String(a)) - parseInt(String(b)))
-                      .map(semester => (
-                        <option key={semester} value={semester}>{semester}</option>
-                      ))}
-                  </select>
-                </div>
-              </div>
-              
-              {/* Santri list */}
-              <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
-                <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 text-blue-600 rounded border-gray-300 dark:border-gray-600 focus:ring-blue-500"
-                    checked={isSelectAll}
-                    onChange={handleSelectAll}
-                  />
-                  <span className="ml-2 text-xs font-medium text-gray-700 dark:text-gray-300">
-                    {isSelectAll 
-                      ? `Semua Terpilih (${filteredSantris.length})`
-                      : selectedSantriIds.size > 0
-                        ? `${selectedSantriIds.size} Terpilih dari ${filteredSantris.length}`
-                        : `Pilih Semua (${filteredSantris.length})`
-                    }
-                  </span>
-                </div>
-                
-                <div className="max-h-60 overflow-y-auto">
-                  {isLoadingSantris ? (
-                    <div className="flex flex-col justify-center items-center py-8 space-y-2">
-                      <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-                      <span className="text-sm text-gray-500 dark:text-gray-400">
-                        Memuat data santri...
-                      </span>
-                    </div>
-                  ) : filteredSantris.length === 0 ? (
-                    <div className="py-4 px-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                      Tidak ada santri yang sesuai dengan filter
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead className="bg-gray-50 dark:bg-gray-800">
-                          <tr>
-                            <th scope="col" className="px-2 py-2 sticky left-0 bg-gray-50 dark:bg-gray-800 z-10"></th>
-                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky left-8 bg-gray-50 dark:bg-gray-800 z-10">
-                              Nama
-                            </th>
-                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                              Status
-                            </th>
-                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                              Kamar
-                            </th>
-                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                              Jenjang Pendidikan
-                            </th>
-                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                              Semester/Kelas
-                            </th>
-                            <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                              Program Studi
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                          {filteredSantris.map((santri) => (
-                            <tr 
-                              key={santri.id}
-                              className={selectedSantriIds.has(santri.id) 
-                                ? "bg-blue-50 dark:bg-blue-900/30" 
-                                : "hover:bg-gray-50 dark:hover:bg-gray-800"}
-                            >
-                              <td className={`px-2 py-2 whitespace-nowrap sticky left-0 z-10 ${
-                                selectedSantriIds.has(santri.id) 
-                                  ? "bg-blue-50 dark:bg-blue-900/30" 
-                                  : "bg-white dark:bg-gray-900"
-                              }`}>
-                                <input
-                                  type="checkbox"
-                                  className="h-4 w-4 text-blue-600 rounded border-gray-300 dark:border-gray-600 focus:ring-blue-500"
-                                  checked={selectedSantriIds.has(santri.id)}
-                                  onChange={() => handleSelectSantri(santri.id)}
-                                />
-                              </td>
-                              <td className={`px-3 py-2 whitespace-nowrap text-xs font-medium text-gray-900 dark:text-white sticky left-8 z-10 ${
-                                selectedSantriIds.has(santri.id) 
-                                  ? "bg-blue-50 dark:bg-blue-900/30" 
-                                  : "bg-white dark:bg-gray-900"
-                              }`}>
-                                {santri.nama}
-                                {editTypeForm.originalSantriIds.includes(santri.id) && (
-                                  <span className="ml-1 text-blue-500 text-xs" title="Sudah termasuk sebelumnya">●</span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-xs">
-                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                  ${santri.statusAktif === 'Aktif' ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400' : 
-                                  santri.statusAktif === 'Boyong' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-400' : 
-                                  santri.statusAktif === 'Lulus' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-400' :
-                                  'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}>
-                                  {santri.statusAktif}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
-                                {santri.kamar || "-"}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
-                                {santri.jenjangPendidikan || "-"}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
-                                {santri.semester || "-"}
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
-                                {santri.programStudi || "-"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                {selectedSantriIds.size === 0 
-                  ? 'Jika tidak ada santri dipilih, presensi akan menampilkan semua santri Aktif'
-                  : `${selectedSantriIds.size} santri akan ditampilkan di presensi ini`
-                }
-              </div>
+              <SantriSelection
+                kodeAsrama={kodeAsrama}
+                selectedSantriIds={selectedSantriIds}
+                onSelectionChange={handleSantriSelectionChange}
+                title="Pilih Santri untuk Presensi Ini"
+              />
             </div>
             
             <div className="flex justify-between mt-8 pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -1339,7 +835,7 @@ export default function SessionSelector({ kodeAsrama, teacherId }: SessionSelect
             <h3 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">Hapus Jenis Presensi</h3>
             
             <p className="mb-6 text-gray-600 dark:text-gray-300">
-              Apakah Anda yakin ingin menghapus jenis presensi "{selectedTypeToDelete.name}"? Tindakan ini tidak dapat dibatalkan.
+              Apakah Anda yakin ingin menghapus jenis presensi &quot;{selectedTypeToDelete.name}&quot;? Tindakan ini tidak dapat dibatalkan.
             </p>
             
             <div className="flex gap-3">

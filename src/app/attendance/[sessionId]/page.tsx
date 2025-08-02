@@ -11,6 +11,7 @@ import { useSessionRealtime, useStudentsRealtime } from '@/app/attendance/hooks'
 import useAttendanceStore from '@/app/attendance/store';
 import StudentCard from '@/components/attendance/StudentCard';
 import NetworkStatusIndicator from '@/components/attendance/NetworkStatus';
+import SantriSelection from '@/components/attendance/SantriSelection';
 import { closeAttendanceSession, deleteAttendanceSession, addSantrisToSession } from '@/firebase/attendance';
 import { KODE_ASRAMA } from '@/constants';
 import { Santri } from '@/types/attendance';
@@ -46,17 +47,8 @@ export default function AttendanceScreen({ params }: { params: { sessionId: stri
 
   // State for add santri modal
   const [showAddSantriModal, setShowAddSantriModal] = useState(false);
-  const [allSantris, setAllSantris] = useState<Santri[]>([]);
-  const [filteredSantris, setFilteredSantris] = useState<Santri[]>([]);
   const [selectedSantriIds, setSelectedSantriIds] = useState<Set<string>>(new Set());
-  const [isSelectAll, setIsSelectAll] = useState(false);
-  const [isLoadingSantris, setIsLoadingSantris] = useState(false);
   const [isAddingSantris, setIsAddingSantris] = useState(false);
-  const [filters, setFilters] = useState({
-    statusAktif: 'Aktif',
-    kamar: '',
-    jenjangPendidikan: ''
-  });
 
   // Load teacher info on mount
   useEffect(() => {
@@ -176,98 +168,9 @@ export default function AttendanceScreen({ params }: { params: { sessionId: stri
     }
   };
 
-  // Fetch all santris who are not already in the session
-  const fetchAvailableSantris = async () => {
-    if (!currentSession) return;
-
-    setIsLoadingSantris(true);
-    try {
-      const santriRef = collection(db, "SantriCollection");
-      // Get all santris from the current asrama
-      const q = query(
-          santriRef,
-          where("kodeAsrama", "==", KODE_ASRAMA)
-      );
-      const querySnapshot = await getDocs(q);
-
-      // Create a set of santri IDs who are already in the session
-      const existingSantriIds = new Set(Object.keys(currentSession.studentStatuses || {}));
-
-      // Filter out santris who are already in the session
-      const santriData = querySnapshot.docs
-          .map(doc => ({
-            id: doc.id,
-            nama: doc.data().nama || '',
-            kamar: doc.data().kamar || '',
-            jenjangPendidikan: doc.data().jenjangPendidikan || '',
-            statusAktif: doc.data().statusAktif || '',
-            tahunMasuk: doc.data().tahunMasuk || '',
-            kodeAsrama: doc.data().kodeAsrama
-          }))
-          .filter(santri => !existingSantriIds.has(santri.id));
-
-      setAllSantris(santriData);
-
-      // Apply initial filters
-      applyFilters(santriData, filters);
-    } catch (error) {
-      console.error("Error fetching santri data:", error);
-      setError("Gagal memuat data santri. Silakan coba lagi.");
-    } finally {
-      setIsLoadingSantris(false);
-    }
-  };
-
-  // Apply filters
-  const applyFilters = (data: Santri[], currentFilters: typeof filters) => {
-    let filtered = [...data];
-
-    if (currentFilters.statusAktif) {
-      filtered = filtered.filter(santri => santri.statusAktif === currentFilters.statusAktif);
-    }
-
-    if (currentFilters.kamar) {
-      filtered = filtered.filter(santri => santri.kamar === currentFilters.kamar);
-    }
-
-    if (currentFilters.jenjangPendidikan) {
-      filtered = filtered.filter(santri => santri.jenjangPendidikan === currentFilters.jenjangPendidikan);
-    }
-
-    setFilteredSantris(filtered);
-    setIsSelectAll(false);
-  };
-
-  // Handle filter changes
-  const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    const newFilters = { ...filters, [name]: value };
-    setFilters(newFilters);
-    applyFilters(allSantris, newFilters);
-  };
-
-  // Handle select all
-  const handleSelectAll = () => {
-    if (isSelectAll) {
-      setSelectedSantriIds(new Set());
-    } else {
-      const newSelectedIds = new Set<string>();
-      filteredSantris.forEach(santri => newSelectedIds.add(santri.id));
-      setSelectedSantriIds(newSelectedIds);
-    }
-    setIsSelectAll(!isSelectAll);
-  };
-
-  // Handle individual selection
-  const handleSelectSantri = (santriId: string) => {
-    const newSelectedIds = new Set(selectedSantriIds);
-    if (newSelectedIds.has(santriId)) {
-      newSelectedIds.delete(santriId);
-    } else {
-      newSelectedIds.add(santriId);
-    }
-    setSelectedSantriIds(newSelectedIds);
-    setIsSelectAll(newSelectedIds.size === filteredSantris.length && filteredSantris.length > 0);
+  // Handle santri selection change
+  const handleSantriSelectionChange = (selectedIds: Set<string>) => {
+    setSelectedSantriIds(selectedIds);
   };
 
   // Add santris to session
@@ -286,7 +189,6 @@ export default function AttendanceScreen({ params }: { params: { sessionId: stri
         // Close modal and reset
         setShowAddSantriModal(false);
         setSelectedSantriIds(new Set());
-        setIsSelectAll(false);
       } else {
         setError("Gagal menambahkan santri. Silakan coba lagi.");
       }
@@ -298,14 +200,10 @@ export default function AttendanceScreen({ params }: { params: { sessionId: stri
     }
   };
 
-  // Load santris when modal opens
+  // Reset selections when modal closes
   useEffect(() => {
-    if (showAddSantriModal) {
-      fetchAvailableSantris();
-    } else {
-      // Reset selections when modal closes
+    if (!showAddSantriModal) {
       setSelectedSantriIds(new Set());
-      setIsSelectAll(false);
     }
   }, [showAddSantriModal]);
 
@@ -634,109 +532,20 @@ export default function AttendanceScreen({ params }: { params: { sessionId: stri
           {/* Add Santri Modal */}
           {showAddSantriModal && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto
                          border border-gray-200 dark:border-gray-700
                          shadow-[8px_8px_20px_rgba(0,0,0,0.12),_-8px_-8px_20px_rgba(255,255,255,0.5)]
                          dark:shadow-[8px_8px_20px_rgba(0,0,0,0.4),_-8px_-8px_20px_rgba(255,255,255,0.03)]">
                   <h3 className="text-2xl font-bold mb-5 text-gray-800 dark:text-gray-100">Tambah Santri ke Sesi Presensi</h3>
 
-                  {/* Filters */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div>
-                      <label htmlFor="statusAktif" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                        Status Aktif
-                      </label>
-                      <select
-                          id="statusAktif"
-                          name="statusAktif"
-                          value={filters.statusAktif}
-                          onChange={handleFilterChange}
-                          className="w-full text-sm rounded-lg border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:text-white px-3 py-2"
-                      >
-                        <option value="">Semua Status</option>
-                        <option value="Aktif">Aktif</option>
-                        <option value="Boyong">Boyong</option>
-                        <option value="Lulus">Lulus</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label htmlFor="kamar" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                        Kamar
-                      </label>
-                      <select
-                          id="kamar"
-                          name="kamar"
-                          value={filters.kamar}
-                          onChange={handleFilterChange}
-                          className="w-full text-sm rounded-lg border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:text-white px-3 py-2"
-                      >
-                        <option value="">Semua Kamar</option>
-                        <option value="A">A</option>
-                        <option value="B">B</option>
-                        <option value="C">C</option>
-                        {/* Add more kamar options as needed */}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label htmlFor="jenjangPendidikan" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                        Jenjang Pendidikan
-                      </label>
-                      <select
-                          id="jenjangPendidikan"
-                          name="jenjangPendidikan"
-                          value={filters.jenjangPendidikan}
-                          onChange={handleFilterChange}
-                          className="w-full text-sm rounded-lg border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:text-white px-3 py-2"
-                      >
-                        <option value="">Semua Jenjang</option>
-                        <option value="MTs">MTs</option>
-                        <option value="MA">MA</option>
-                        <option value="Aliyah">Aliyah</option>
-                        <option value="SMP">SMP</option>
-                        <option value="SMA">SMA</option>
-                        {/* Add more jenjang options as needed */}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center mb-4">
-                    <input
-                        type="checkbox"
-                        id="selectAll"
-                        checked={isSelectAll}
-                        onChange={handleSelectAll}
-                        className="h-4 w-4 text-indigo-600 bg-gray-100 border-gray-300 rounded mr-2 focus:ring-indigo-500"
-                    />
-                    <label htmlFor="selectAll" className="text-gray-700 dark:text-gray-300 text-sm">Pilih Semua</label>
-                  </div>
-
-                  {isLoadingSantris && (
-                      <div className="py-4 text-center text-gray-600 dark:text-gray-300">Memuat data santri...</div>
-                  )}
-
-                  {!isLoadingSantris && filteredSantris.length === 0 && (
-                      <div className="py-4 text-center text-gray-600 dark:text-gray-300">Tidak ada santri tersedia.</div>
-                  )}
-
-                  {!isLoadingSantris && filteredSantris.length > 0 && (
-                      <ul className="space-y-2 mb-6">
-                        {filteredSantris.map(santri => (
-                            <li key={santri.id} className="flex items-center">
-                              <input
-                                  type="checkbox"
-                                  checked={selectedSantriIds.has(santri.id)}
-                                  onChange={() => handleSelectSantri(santri.id)}
-                                  className="h-4 w-4 text-indigo-600 bg-gray-100 border-gray-300 rounded mr-2 focus:ring-indigo-500"
-                              />
-                              <span className="text-gray-700 dark:text-gray-300 text-sm">
-                        {santri.nama} - Kamar {santri.kamar}, {santri.jenjangPendidikan}
-                      </span>
-                            </li>
-                        ))}
-                      </ul>
-                  )}
+                  <SantriSelection
+                    kodeAsrama={KODE_ASRAMA}
+                    selectedSantriIds={selectedSantriIds}
+                    onSelectionChange={handleSantriSelectionChange}
+                    excludeIds={currentSession ? Object.keys(currentSession.studentStatuses || {}) : []}
+                    title="Pilih Santri untuk Ditambahkan"
+                    description="Santri yang dipilih akan ditambahkan ke sesi presensi ini"
+                  />
 
                   <div className="flex justify-end gap-3 mt-6">
                     <button
